@@ -94,4 +94,4 @@ _CV_DEFAULT_PARAMS = {
     "lambda_ortho": 0.2, "lambda_l1": 1e-5,
 }
 _CV_PARAM_KEYS = tuple(_CV_DEFAULT_PARAMS)
-_CV_MODES = ("both", "cv", "final", "legacy")
+_CV_MODES = ("holdout", "both", "cv", "final", "legacy")

@@ -26,33 +26,35 @@ Prepare the following CSVs in `data/` (samples in rows, features in columns; fir
 
 Sample IDs must match across files. Check the label codebook before using the default positive class `1` and negative class `0`.
 
-## Usage
+## Main analysis: one participant-level 4:1 holdout
 
 ```bash
-python run.py --mode both --data-dir data
+python run.py --mode holdout --data-dir data --expected-n 323 --seed 42
 ```
 
-This runs selection-repeated cross-validation followed by an independently fitted final model. Use `--mode cv` or `--mode final` for either stage alone.
+This implementation uses a single stratified 80/20 outer test partition. The
+development subjects alone supply inner 20% validation, normalization,
+model training, module ranking, Top-12 feature selection and logistic classifier
+training. The outer test partition is used only for the diagnostic ROC/AUC.
+The default configuration matches Table S1 (k=60, hidden=128, learning rate
+0.001 and regularization coefficients), but **the published AUCs are not
+hard-coded or guaranteed**. Existing mode aliases `both`, `cv`, and `final`
+run the same holdout protocol; `legacy` retains exploratory legacy code.
 
-Common options: `--seed 42`, `--folds 5`, `--optuna-trials 50` (optional inner-fold tuning), `--top-n 12`, `--cumsum-threshold 0.80`, `--expected-n 323` (optional sample-count check). By default, hub lists are capped at 50 features per modality; use `--max-hub-features 0` for uncapped cumulative-weight selection.
+Files in `DeepCAN_NMF_holdout_output/holdout_evaluation/` include the hashed
+split manifest, predictions, training-selected features, rankings and weights.
 
-Outputs are saved in `DeepCAN_NMF_selection_nested_output/` and include fold-specific selections, held-out ROC predictions, final-module hub features, and exploratory cross-modal correlations.
+### Manuscript reproducibility limitation
 
-## Code structure
+The original ADNI 469-participant data, original 4:1 identity-level split,
+limma expression analysis and the archive predictions are **not contained
+in this zip**. The 323-person label-filtered CSV input cannot reproduce the
+upstream CN-assisted 610/327 DEG comparison. Therefore, if `d.csv` contains
+globally pre-screened genes, the script **cannot establish absence of
+upstream data leakage**. Supply verified training-only DEGs for the *same*
+split and confirm it matches the historical 469-person split before claiming
+this rerun reproduces the published estimates.
 
-- `data.py`, `model.py`, `training.py`: input handling, architecture, optimization.
-- `features.py`: module ranking and hub-feature selection.
-- `evaluation.py`: fold-wise diagnostic evaluation and stability.
-- `final_analysis.py`: independent final-model analysis and BH-FDR.
-- `visualization.py`: plots; `cli.py`: arguments; `run.py`: entry point.
-- `legacy.py`: original exploratory workflow (`--mode legacy`).
-
-All scripts are in the repository root. For a synthetic-data check, install `requirements-dev.txt` and run `pytest -q test_smoke.py`.
-
-## Scope and data availability
-
-ADNI participant-level data are **not included**. This repository starts from prepared CSVs; it does not perform the manuscript's upstream limma DEG screening, initial 4:1 held-out partition, external GSE282742 evaluation or baseline comparisons. Fold-wise results cannot verify leakage-free DEG screening if gene inputs were selected upstream. The legacy ROC is exploratory, not an unbiased diagnostic estimate. Reproducing all manuscript results requires the original authorized data and preprocessing procedures. Do not upload subject-level outputs to GitHub.
-
-## License
-
-MIT (`LICENSE`).
+GSE282742, extra 160-person ADNI evaluation, Table 2, Table S7 and
+Table S9 cannot be recreated from these inputs. Do not upload identifiable
+ADNI outputs to a public repository.

@@ -47,7 +47,7 @@ def test_synthetic_end_to_end(tmp_path):
     repo = Path(__file__).resolve().parent
     args = [
         sys.executable, str(repo / "run.py"),
-        "--mode", "both", "--data-dir", str(data_dir),
+        "--mode", "holdout", "--data-dir", str(data_dir),
         "--folds", "2", "--epochs", "2", "--patience", "2",
         "--threads", "1", "--latent-dim", "6", "--hidden-dim", "12",
         "--top-n", "3", "--max-hub-features", "9",
@@ -62,25 +62,19 @@ def test_synthetic_end_to_end(tmp_path):
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
 
-    cv = json.loads(
-        (output / "cross_validation" / "cv_summary.json").read_text()
-    )
-    final = json.loads(
-        (output / "final_model_biological_exploration" /
-         "final_summary.json").read_text()
-    )
-    assert cv["sample_n"] == 40
-    assert cv["fold_n"] == 2
-    assert len(cv["module_indices_1based"]) == 2
-    assert 1 <= final["module_1based"] <= 6
-    predictions = pd.read_csv(
-        output / "cross_validation" / "out_of_fold_predictions.csv"
-    )
-    assert len(predictions) == 40
-    assert predictions["row_index"].nunique() == 40
-    assert predictions["prob_positive"].between(0, 1).all()
-    assert (output / "final_model_biological_exploration" /
-            "final_hub_features_80pct.csv").exists()
+    held = json.loads((output / "holdout_evaluation" /
+                       "summary.json").read_text())
+    assert held["development_n"] + held["test_n"] == 40
+    assert held["test_n"] == 8
+    assert 1 <= held["module"] <= 6
+    assert 0 <= held["heldout_auc"] <= 1
+    preds = pd.read_csv(output / "holdout_evaluation" /
+                        "heldout_predictions.csv")
+    assert len(preds) == 8
+    assert preds["row"].nunique() == 8
+    assert preds["predicted_probability"].between(0, 1).all()
+    assert (output / "holdout_evaluation" / "training_hubs.csv").exists()
+    assert (output / "holdout_evaluation" / "split_manifest_hashed.csv").exists()
 
 
 def test_feature_selection_and_seed():

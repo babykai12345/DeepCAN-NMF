@@ -15,6 +15,7 @@ from data import (
 )
 from evaluation import (
     _cv_run,
+    _cv_holdout_run,
 )
 from final_analysis import (
     _cv_final_run,
@@ -37,8 +38,8 @@ def _cv_cli():
             "forces M44 or leaks final-model features into test folds."
         ))
     parser.add_argument("--mode",choices=_CV_MODES,default="both",
-                        help="both=cv then final; cv=CV only; final=biology only; "
-                             "legacy=original uploaded code")
+                        help="holdout / both / cv / final all use single 4:1 holdout; "
+                             "legacy is exploratory original")
     parser.add_argument("--data-dir",default=".")
     parser.add_argument("--files",nargs=4,default=[
         "c.csv","a.csv","b.csv","d.csv"],
@@ -54,7 +55,9 @@ def _cv_cli():
     parser.add_argument("--expected-n",type=int,default=0,
                         help="Require exactly this many labeled overlapping subjects; "
                              "0 disables this check")
-    parser.add_argument("--folds",type=int,default=5)
+    parser.add_argument("--folds",type=int,default=5,
+                        help="Compatibility only: not used for primary holdout")
+    parser.add_argument("--test-fraction",type=float,default=0.20)
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--inner-val-fraction",type=float,default=0.20)
     parser.add_argument("--epochs",type=int,default=150)
@@ -94,7 +97,7 @@ def _cv_cli():
                         help="export sensitive subject-level selected-omics values")
     parser.add_argument("--export-ids",action="store_true",
                         help="include raw subject identifiers in private outputs")
-    parser.add_argument("--out",default="DeepCAN_NMF_selection_nested_output")
+    parser.add_argument("--out",default="DeepCAN_NMF_holdout_output")
     args=parser.parse_args()
 
     if args.mode=="legacy":
@@ -104,6 +107,8 @@ def _cv_cli():
 
     if args.positive==args.negative or args.folds<2:
         parser.error("positive/negative label must differ, and folds >=2")
+    if not 0<args.test_fraction<.5:
+        parser.error("test-fraction must be in (0,0.5)")
     if not 0<args.inner_val_fraction<.5 or args.expected_n<0:
         parser.error("invalid inner-val-fraction or expected-n")
     if args.epochs<1 or args.hpo_epochs<1 or args.patience<1:
@@ -147,7 +152,7 @@ def _cv_cli():
     out=_CVPath(args.out).resolve()
     out.mkdir(parents=True,exist_ok=True)
     meta={
-        "mode":args.mode,"seed":args.seed,
+        "mode":"holdout","seed":args.seed,
         "dataset_n":len(data["y"]),
         "negative_label":args.negative,
         "positive_label":args.positive,
@@ -169,24 +174,20 @@ def _cv_cli():
             {"inner_fold_Optuna_trials":args.optuna_trials},
         "upstream_DEG_leakage_caveat":
             "Input GENE may be preselected upstream; this script cannot "
-            "prove fold-local limma filtering without unscreened data.",
+            "prove train-only limma without the original 469-subject data "
+            "and archived subject-level split.",
         "exploratory_fixed_final_roc":
             "Original fixed M44 ROC is not a fold-nested unbiased ROC.",
         "positive_label_semantics": "Must be verified against diagnosis codebook.",
     }
     (out/"workflow_metadata.json").write_text(
         json.dumps(meta,indent=2,ensure_ascii=False),encoding="utf-8")
-    cv_result=None
-    if args.mode in ("both","cv"):
-        cv_result=_cv_run(data,args,out)
-    if args.mode in ("both","final"):
-        _cv_final_run(data,args,out,cv_result=cv_result)
-
+    _cv_holdout_run(data,args,out)
     print("\n" + "="*72)
     print("FINISHED. All stage-specific outputs:",out)
-    print("  CV ROC uses only fold-local module+Top-feature selection.")
-    print("  Final module/hubs are ONE exploratory biological interpretation.")
-    print("  Final hub list != fivefold intersection by definition.")
-    print("  DEG already preselected? Upstream fold-local limma remains unverified.")
+    print("  ROC is a single independent 4:1 holdout, not five-fold CV.")
+    print("  The chosen module and hubs come from development only.")
+    print("  No test-set information enters model/hub selection.")
+    print("  Train-only limma screening must be separately documented.")
     print("="*72)
     return out

@@ -235,8 +235,8 @@ def _cv_load_labeled(args):
     if args.expected_n and len(ids) != args.expected_n:
         raise ValueError(f"预计 {args.expected_n} 位有标签受试者，但匹配到 {len(ids)} 位。"
                          "请核对ID、输入文件或用 --expected-n 0 关闭限制。")
-    if len(ids) < args.folds * 2 or min(np.bincount(y,minlength=2)) < args.folds:
-        raise ValueError("每类样本过少，无法进行请求的分层交叉验证。")
+    if len(ids)<10 or min(np.bincount(y,minlength=2))<3:
+        raise ValueError("每类样本过少，无法进行分层留出验证。")
     matrices = []
     for df in dfs:
         z = df.loc[ids].apply(pd.to_numeric,errors="coerce").to_numpy(

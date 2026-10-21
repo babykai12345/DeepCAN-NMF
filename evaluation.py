@@ -301,3 +301,58 @@ def _cv_run(data,args,root_out):
     print(f"  Export: {out}")
     return dict(summary=results,folds=all_folds,recurrence=recurrence,
                 oof=oof)
+
+def _cv_holdout_run(data,args,root_out):
+    """Single stratified 80/20 holdout: selection and fitting on development only."""
+    from sklearn.model_selection import train_test_split
+    from training import _cv_train_full_best_epoch
+    import hashlib
+    out=root_out/"holdout_evaluation"
+    out.mkdir(parents=True,exist_ok=True)
+    dev,test=train_test_split(np.arange(len(data["y"])),
+        test_size=args.test_fraction,random_state=args.seed,stratify=data["y"])
+    fit,val=train_test_split(dev,test_size=args.inner_val_fraction,
+        random_state=args.seed+90009,stratify=data["y"][dev])
+    dims=[x.shape[1] for x in data["X"]]
+    norm=_CVNormalizer().fit(data["X"],fit)
+    train_t=norm.transform(data["X"],fit)
+    val_t=norm.transform(data["X"],val)
+    _cv_seed(args.seed+70707)
+    params,hpo=_cv_tune_params(args,train_t,val_t,dims,args.seed+80808)
+    _cv_seed(args.seed+90909)
+    _,loss,history=run_training(train_t,val_t,dims,epochs=args.epochs,
+       early_stop_patience=args.patience,trial=None,verbose=False,**params)
+    best_epoch=int(np.argmin(history["val_total"])+1)
+    norm_dev=_CVNormalizer().fit(data["X"],dev)
+    _cv_seed(args.seed+100041)
+    model,_=_cv_train_full_best_epoch(norm_dev.transform(data["X"],dev),
+                                       params,best_epoch,args)
+    selected=_cv_select_fold_module(_cv_model_bases(model),data["names"],
+                                    args,fold="TRAIN")
+    pred=_cv_fit_predict_features(data,dev,test,selected,args)
+    score=float(_cv_roc_auc_score(data["y"][test],pred))
+    summary={"protocol":"single stratified 4:1 holdout, no primary CV",
+      "development_n":int(len(dev)),"test_n":int(len(test)),
+      "development_ad_n":int(data["y"][dev].sum()),
+      "test_ad_n":int(data["y"][test].sum()),
+      "module":int(selected["module"]+1),"heldout_auc":score,
+      "selected_epoch":best_epoch,"hyperparameters":params,
+      "caution":"Upstream train-only limma not verifiable from preselected d.csv. "
+       "This split may differ from the archived manuscript split; published "
+       "AUC cannot be reproduced without source prediction and split records."}
+    pd.DataFrame([{"partition":role,"row":int(i),
+      "participant_sha256":hashlib.sha256(str(data["ids"][i]).encode()).hexdigest()}
+      for role,arr in [("development",dev),("inner_fit",fit),
+                       ("inner_validation",val),("test",test)] for i in arr]
+      ).to_csv(out/"split_manifest_hashed.csv",index=False)
+    pd.DataFrame({"row":test,"label":data["y"][test],
+      "predicted_probability":pred}).to_csv(out/"heldout_predictions.csv",index=False)
+    pd.DataFrame(selected["hub_rows"]).to_csv(out/"training_hubs.csv",index=False)
+    pd.DataFrame(selected["top_rows"]).to_csv(out/"training_top_features.csv",index=False)
+    pd.DataFrame(selected["ranking_rows"]).to_csv(out/"training_module_rankings.csv",index=False)
+    torch.save(model.state_dict(),out/"training_model_weights.pth")
+    (out/"summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
+    _cv_write_plot_roc(data["y"][test],pred,out/"heldout_ROC",
+      "DeepCAN-NMF independent held-out ROC")
+    print("Held-out AUC:",score,"; held-out AD:",summary["test_ad_n"])
+    return summary
